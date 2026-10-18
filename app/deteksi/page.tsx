@@ -15,6 +15,7 @@ interface DetectionResult {
 }
 
 export default function DeteksiPage() {
+  const [activeTab, setActiveTab] = useState<"upload" | "camera">("upload");
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState<string>("");
@@ -22,18 +23,89 @@ export default function DeteksiPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [result, setResult] = useState<DetectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  /* ── Kamera Stream Handler ── */
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  const startCamera = async (facingMode: "environment" | "user" = cameraFacing) => {
+    stopCamera();
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: facingMode },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setIsCameraActive(true);
+    } catch (err) {
+      console.error(err);
+      setError("Gagal mengakses kamera. Pastikan izin kamera telah diizinkan di browser.");
+      setIsCameraActive(false);
+    }
+  };
+
+  const toggleCameraFacing = () => {
+    const nextFacing = cameraFacing === "environment" ? "user" : "environment";
+    setCameraFacing(nextFacing);
+    if (isCameraActive) {
+      startCamera(nextFacing);
+    }
+  };
+
+  const capturePhoto = (autoDetect = true) => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+    setSelectedImage(dataUrl);
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], `live-kamera-${Date.now()}.jpg`, {
+          type: "image/jpeg",
+        });
+        setSelectedFile(file);
+        setFileName(file.name);
+        stopCamera();
+        if (autoDetect) {
+          executeDetection(file);
+        }
+      }
+    }, "image/jpeg", 0.9);
+  };
 
   /* ── Deteksi via FastAPI Backend ── */
-  const runDetection = async () => {
-    if (!selectedFile) return;
+  const executeDetection = async (fileToDetect: File) => {
     setIsProcessing(true);
     setResult(null);
     setError(null);
 
     try {
       const formData = new FormData();
-      formData.append("file", selectedFile);
+      formData.append("file", fileToDetect);
 
       const response = await fetch(`${API_BASE_URL}/api/detect`, {
         method: "POST",
@@ -75,6 +147,12 @@ export default function DeteksiPage() {
     }
   };
 
+  const runDetection = () => {
+    if (selectedFile) {
+      executeDetection(selectedFile);
+    }
+  };
+
   const processFile = (file: File) => {
     if (!file.type.startsWith("image/")) {
       setError("Hanya file gambar yang diizinkan (JPG, PNG, WEBP).");
@@ -110,6 +188,7 @@ export default function DeteksiPage() {
   }, []);
 
   const handleReset = () => {
+    stopCamera();
     setSelectedImage(null);
     setSelectedFile(null);
     setFileName("");
@@ -143,90 +222,238 @@ export default function DeteksiPage() {
               Deteksi Biji Kopi
             </h1>
             <p className="text-color-brown-600 max-w-lg mx-auto leading-relaxed">
-              Unggah gambar biji kopi — model AI akan mendeteksi <strong>jenis varietas</strong> dan{" "}
+              Unggah file atau ambil <strong>foto langsung (kamera live)</strong> — model AI akan mendeteksi <strong>jenis varietas</strong> dan{" "}
               <strong>jumlah biji</strong> secara otomatis.
             </p>
           </div>
 
           <div className="grid lg:grid-cols-2 gap-6">
 
-            {/* ── Upload Panel ── */}
-            <div className="bg-white rounded-2xl shadow-sm border border-color-brown-100 p-6">
-              <h2 className="text-color-brown-800 font-semibold text-lg mb-5 flex items-center gap-2">
-                <svg className="w-5 h-5 text-color-brown-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                Unggah Gambar
-              </h2>
+            {/* ── Upload & Camera Panel ── */}
+            <div className="bg-white rounded-2xl shadow-sm border border-color-brown-100 p-6 flex flex-col">
+              {/* Tab Selector */}
+              <div className="flex bg-stone-100 p-1 rounded-xl mb-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("upload");
+                    stopCamera();
+                  }}
+                  className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-2 ${
+                    activeTab === "upload"
+                      ? "bg-white text-color-brown-800 shadow-sm font-semibold"
+                      : "text-stone-500 hover:text-stone-800"
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Unggah Gambar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("camera");
+                    if (!selectedImage) {
+                      startCamera();
+                    }
+                  }}
+                  className={`flex-1 py-2 text-sm font-medium rounded-lg transition-all flex items-center justify-center gap-2 ${
+                    activeTab === "camera"
+                      ? "bg-white text-color-brown-800 shadow-sm font-semibold"
+                      : "text-stone-500 hover:text-stone-800"
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Live Kamera
+                </button>
+              </div>
 
-              {/* Drop Zone */}
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                onClick={() => !selectedImage && fileInputRef.current?.click()}
-                className={`relative border-2 border-dashed rounded-xl transition-all duration-200 ${
-                  isDragging
-                    ? "border-color-brown-500 bg-color-brown-50 scale-[1.01]"
-                    : selectedImage
-                    ? "border-color-brown-300 bg-color-brown-50"
-                    : "border-color-brown-200 hover:border-color-brown-400 hover:bg-color-brown-50 cursor-pointer"
-                }`}
-              >
-                {selectedImage ? (
-                  <div className="p-4">
-                    <div className="relative w-full h-72 rounded-lg overflow-hidden bg-color-brown-100">
+              {/* Mode: Kamera Langsung */}
+              {activeTab === "camera" && (
+                <div className="flex-1 flex flex-col">
+                  {selectedImage ? (
+                    <div className="relative w-full h-72 rounded-xl overflow-hidden bg-black/5 border border-color-brown-200">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={result?.annotatedImage || selectedImage}
-                        alt="Gambar biji kopi yang akan dideteksi"
+                        alt="Hasil foto biji kopi"
                         className="w-full h-full object-contain"
                       />
+                      {result?.annotatedImage && (
+                        <div className="absolute bottom-2 left-0 right-0 text-center">
+                          <span className="bg-emerald-800/80 backdrop-blur-xs text-white text-xs px-3 py-1 rounded-full font-medium">
+                            ✓ Hasil Segmentasi Model
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    {result?.annotatedImage && (
-                      <p className="text-xs text-emerald-600 font-medium mt-2 text-center flex items-center justify-center gap-1">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  ) : (
+                    <div className="relative w-full h-72 rounded-xl overflow-hidden bg-stone-900 flex items-center justify-center border border-stone-800">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className={`w-full h-full object-cover ${!isCameraActive ? "hidden" : ""}`}
+                      />
+                      {!isCameraActive ? (
+                        <div className="text-center p-6">
+                          <div className="w-16 h-16 mx-auto mb-3 bg-stone-800 rounded-full flex items-center justify-center">
+                            <svg className="w-8 h-8 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                          </div>
+                          <p className="text-stone-300 font-medium mb-3">Kamera Belum Aktif</p>
+                          <button
+                            type="button"
+                            onClick={() => startCamera()}
+                            className="px-5 py-2.5 rounded-lg text-white font-medium text-sm transition-all"
+                            style={{ background: "linear-gradient(135deg, #8B5A2B, #6B4423)" }}
+                          >
+                            Aktifkan Kamera
+                          </button>
+                        </div>
+                      ) : (
+                        /* Overlay frame penunjuk posisi biji kopi */
+                        <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4">
+                          <div className="flex justify-between items-center pointer-events-auto">
+                            <span className="bg-black/60 backdrop-blur-xs text-white text-xs px-2.5 py-1 rounded-md flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                              LIVE
+                            </span>
+                            <button
+                              type="button"
+                              onClick={toggleCameraFacing}
+                              title="Ganti Kamera (Depan / Belakang)"
+                              className="bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg text-xs flex items-center gap-1 transition-colors"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            </button>
+                          </div>
+                          <div className="border border-white/30 border-dashed rounded-lg mx-6 h-36 flex items-center justify-center">
+                            <p className="text-white/70 text-xs bg-black/40 px-2 py-1 rounded">Posisikan biji kopi di area ini</p>
+                          </div>
+                          <div />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Kontrol Kamera */}
+                  <div className="mt-4 flex gap-2">
+                    {isCameraActive && !selectedImage && (
+                      <button
+                        type="button"
+                        onClick={() => capturePhoto(true)}
+                        className="flex-1 py-3 rounded-xl font-semibold text-sm text-white flex items-center justify-center gap-2 shadow-md hover:brightness-110 transition-all"
+                        style={{ background: "linear-gradient(135deg, #10b981, #059669)" }}
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
-                        Hasil segmentasi model
-                      </p>
+                        Ambil Foto & Deteksi Langsung
+                      </button>
+                    )}
+
+                    {selectedImage && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleReset();
+                          startCamera();
+                        }}
+                        className="flex-1 py-3 rounded-xl border border-color-brown-300 text-color-brown-700 font-semibold text-sm hover:bg-color-brown-50 transition-all flex items-center justify-center gap-2"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        </svg>
+                        Buka Kamera Lagi
+                      </button>
                     )}
                   </div>
-                ) : (
-                  <div className="p-10 text-center">
-                    <div className="w-16 h-16 mx-auto mb-4 bg-color-brown-100 rounded-full flex items-center justify-center">
-                      <svg className="w-8 h-8 text-color-brown-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <p className="text-color-brown-700 font-medium mb-1">
-                      Drag & drop gambar di sini
-                    </p>
-                    <p className="text-color-brown-400 text-sm mb-4">atau klik untuk memilih file</p>
-                    <span className="inline-block text-white px-6 py-2 rounded-lg font-medium text-sm" style={{ background: "linear-gradient(135deg, #8B5A2B, #6B4423)" }}>
-                      Pilih File
-                    </span>
-                    <p className="text-color-brown-400 text-xs mt-4">JPG, PNG, WEBP · Maks 10 MB</p>
+                </div>
+              )}
+
+              {/* Mode: Unggah Gambar (File Upload) */}
+              {activeTab === "upload" && (
+                <div>
+                  {/* Drop Zone */}
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => !selectedImage && fileInputRef.current?.click()}
+                    className={`relative border-2 border-dashed rounded-xl transition-all duration-200 ${
+                      isDragging
+                        ? "border-color-brown-500 bg-color-brown-50 scale-[1.01]"
+                        : selectedImage
+                        ? "border-color-brown-300 bg-color-brown-50"
+                        : "border-color-brown-200 hover:border-color-brown-400 hover:bg-color-brown-50 cursor-pointer"
+                    }`}
+                  >
+                    {selectedImage ? (
+                      <div className="p-4">
+                        <div className="relative w-full h-72 rounded-lg overflow-hidden bg-color-brown-100">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={result?.annotatedImage || selectedImage}
+                            alt="Gambar biji kopi yang akan dideteksi"
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        {result?.annotatedImage && (
+                          <p className="text-xs text-emerald-600 font-medium mt-2 text-center flex items-center justify-center gap-1">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Hasil segmentasi model
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-10 text-center">
+                        <div className="w-16 h-16 mx-auto mb-4 bg-color-brown-100 rounded-full flex items-center justify-center">
+                          <svg className="w-8 h-8 text-color-brown-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <p className="text-color-brown-700 font-medium mb-1">
+                          Drag & drop gambar di sini
+                        </p>
+                        <p className="text-color-brown-400 text-sm mb-4">atau klik untuk memilih file</p>
+                        <span className="inline-block text-white px-6 py-2 rounded-lg font-medium text-sm" style={{ background: "linear-gradient(135deg, #8B5A2B, #6B4423)" }}>
+                          Pilih File
+                        </span>
+                        <p className="text-color-brown-400 text-xs mt-4">JPG, PNG, WEBP · Maks 10 MB</p>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }}
-                className="hidden"
-              />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) processFile(f); }}
+                    className="hidden"
+                  />
 
-              {/* File name */}
-              {fileName && (
-                <p className="text-color-brown-500 text-sm mt-3 flex items-center gap-1.5 truncate">
-                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                  </svg>
-                  {fileName}
-                </p>
+                  {/* File name */}
+                  {fileName && (
+                    <p className="text-color-brown-500 text-sm mt-3 flex items-center gap-1.5 truncate">
+                      <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                      </svg>
+                      {fileName}
+                    </p>
+                  )}
+                </div>
               )}
 
               {/* Error */}
@@ -236,47 +463,49 @@ export default function DeteksiPage() {
                 </div>
               )}
 
-              {/* Action Buttons */}
-              <div className="mt-5 flex gap-3">
-                <button
-                  onClick={runDetection}
-                  disabled={!selectedFile || isProcessing}
-                  className="flex-1 py-3 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2"
-                  style={
-                    selectedFile && !isProcessing
-                      ? { background: "linear-gradient(135deg, #8B5A2B, #6B4423)", color: "white" }
-                      : { background: "#e7e5e4", color: "#a8a29e", cursor: "not-allowed" }
-                  }
-                >
-                  {isProcessing ? (
-                    <>
-                      <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      Mendeteksi...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                      Deteksi Sekarang
-                    </>
-                  )}
-                </button>
-                {selectedImage && (
+              {/* Action Buttons for Upload Tab */}
+              {activeTab === "upload" && (
+                <div className="mt-5 flex gap-3">
                   <button
-                    onClick={handleReset}
-                    className="px-4 py-3 rounded-xl border-2 border-stone-200 text-stone-500 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition-all duration-200"
-                    title="Reset"
+                    onClick={runDetection}
+                    disabled={!selectedFile || isProcessing}
+                    className="flex-1 py-3 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2"
+                    style={
+                      selectedFile && !isProcessing
+                        ? { background: "linear-gradient(135deg, #8B5A2B, #6B4423)", color: "white" }
+                        : { background: "#e7e5e4", color: "#a8a29e", cursor: "not-allowed" }
+                    }
                   >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
+                    {isProcessing ? (
+                      <>
+                        <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Mendeteksi...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        Deteksi Sekarang
+                      </>
+                    )}
                   </button>
-                )}
-              </div>
+                  {selectedImage && (
+                    <button
+                      onClick={handleReset}
+                      className="px-4 py-3 rounded-xl border-2 border-stone-200 text-stone-500 hover:border-red-300 hover:text-red-500 hover:bg-red-50 transition-all duration-200"
+                      title="Reset"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* ── Result Panel ── */}
