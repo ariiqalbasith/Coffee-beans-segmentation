@@ -222,7 +222,7 @@ export default function DeteksiPage() {
               Deteksi Biji Kopi
             </h1>
             <p className="text-color-brown-600 max-w-lg mx-auto leading-relaxed">
-              Unggah file atau ambil <strong>foto langsung (kamera live)</strong> — model AI akan mendeteksi <strong>jenis varietas</strong> dan{" "}
+              Unggah file atau ambil <strong>foto langsung dari kamera</strong> — model AI akan mendeteksi <strong>jenis varietas</strong> dan{" "}
               <strong>jumlah biji</strong> secara otomatis.
             </p>
           </div>
@@ -268,7 +268,7 @@ export default function DeteksiPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  Live Kamera
+                  Kamera
                 </button>
               </div>
 
@@ -320,20 +320,17 @@ export default function DeteksiPage() {
                       ) : (
                         /* Overlay frame penunjuk posisi biji kopi */
                         <div className="absolute inset-0 pointer-events-none flex flex-col justify-between p-4">
-                          <div className="flex justify-between items-center pointer-events-auto">
-                            <span className="bg-black/60 backdrop-blur-xs text-white text-xs px-2.5 py-1 rounded-md flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                              LIVE
-                            </span>
+                          <div className="flex justify-end items-center pointer-events-auto">
                             <button
                               type="button"
                               onClick={toggleCameraFacing}
                               title="Ganti Kamera (Depan / Belakang)"
-                              className="bg-black/60 hover:bg-black/80 text-white p-2 rounded-lg text-xs flex items-center gap-1 transition-colors"
+                              className="bg-black/60 hover:bg-black/80 text-white px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-colors shadow-sm"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                               </svg>
+                              <span>Ganti Kamera</span>
                             </button>
                           </div>
                           <div className="border border-white/30 border-dashed rounded-lg mx-6 h-36 flex items-center justify-center">
